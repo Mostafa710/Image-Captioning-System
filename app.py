@@ -330,7 +330,7 @@ class CaptionerNoAttention(nn.Module):
 @torch.no_grad()
 def beam_search(model, features, vocab, beam_size=3, max_len=20):
     """Beam search decoding."""
-    is_attention = isinstance(model, CaptionerAttention)
+    is_attention = hasattr(model, 'attention')
 
     if is_attention:
         A    = model.proj(features)
