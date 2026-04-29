@@ -327,6 +327,74 @@ class CaptionerNoAttention(nn.Module):
         return " ".join(result)
 
 
+@torch.no_grad()
+def beam_search(model, features, vocab, beam_size=3, max_len=20):
+    """Beam search decoding."""
+    is_attention = isinstance(model, CaptionerAttention)
+
+    if is_attention:
+        A    = model.proj(features)
+        h, c = model.init_hidden(A)
+    else:
+        h, c = model.init_hidden(features)
+        A    = None
+
+    start_id = vocab.word2idx[vocab.START]
+    end_id   = vocab.word2idx[vocab.END]
+    unk_id   = vocab.word2idx[vocab.UNK]
+
+    beams     = [(0.0, [start_id], h, c)]
+    completed = []
+
+    for _ in range(max_len):
+        new_beams = []
+
+        for score, tokens, h_b, c_b in beams:
+            word_id = torch.tensor([tokens[-1]]).to(features.device)
+            embed   = model.embedding(word_id)
+
+            if is_attention:
+                z, _ = model.attention(A, h_b)
+                lstm_in = torch.cat([embed, z], dim=1)
+            else:
+                lstm_in = embed
+
+            h_new, c_new = model.lstm(lstm_in, (h_b, c_b))
+            logits       = model.fc_out(h_new)
+            logits[:, unk_id] = float("-inf")
+
+            log_probs = F.log_softmax(logits, dim=1).squeeze(0)
+            top_log_probs, top_ids = log_probs.topk(beam_size)
+
+            for log_p, idx in zip(top_log_probs, top_ids):
+                new_score  = score + log_p.item()
+                new_tokens = tokens + [idx.item()]
+                if idx.item() == end_id:
+                    completed.append((new_score, new_tokens))
+                else:
+                    new_beams.append((new_score, new_tokens, h_new, c_new))
+
+        if not new_beams:
+            break
+
+        new_beams.sort(key=lambda x: x[0], reverse=True)
+        beams = new_beams[:beam_size]
+
+    if not completed:
+        completed = [(b[0], b[1]) for b in beams]
+
+    completed.sort(key=lambda x: x[0], reverse=True)
+    best_tokens = completed[0][1]
+
+    words = []
+    for idx in best_tokens[1:]:
+        word = vocab.idx2word.get(idx, vocab.UNK)
+        if word == vocab.END:
+            break
+        words.append(word)
+
+    return " ".join(words)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # CNN feature extractor
 # ══════════════════════════════════════════════════════════════════════════════
@@ -506,7 +574,7 @@ with col2:
     if generate_clicked and pil_image is not None and model_loaded:
         with st.spinner("Generating..."):
             features = extract_features(pil_image, cnn_extractor)
-            caption  = model.generate(features, vocab, max_len=MAX_LEN)
+            caption = beam_search(model, features, vocab, beam_size=3, max_len=MAX_LEN)
 
         words      = caption.split()
         chips_html = "".join(
