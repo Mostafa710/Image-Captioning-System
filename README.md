@@ -129,13 +129,13 @@ requests
 
 ## 📁 Dataset
 
-**Flickr8k** — 8,000 images, each with 5 human-written captions (40,000 total).
+**Flickr8k** — 8,091 images, each with 5 human-written captions (40,455 total).
 
 | Split | Images |
 |-------|--------|
-| Train | 6,000  |
-| Val   | 1,000  |
-| Test  | 1,000  |
+| Train | 7,000  |
+| Val   | 550    |
+| Test  | 541    |
 
 ---
 
